@@ -1,0 +1,349 @@
+---
+title: "Analysis processing"
+author: "shiqin_xiang"
+date: "2026-04-16"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+1.Introduction
+
+Political language plays a central role in shaping public debate, influencing perceptions, and structuring political conflict. In parliamentary settings, speech is not only used to convey information, but also to persuade, challenge opponents, and mobilise support. As such, the study of political discourse provides important insights into how political actors communicate strategically within institutional contexts.
+
+A key aspect of political discourse is the use of emotional language. Emotive rhetoric can serve multiple functions, including strengthening arguments, framing issues in morally charged terms, and appealing to broader audiences. In recent years, there has been growing interest in the role of emotion in politics, particularly in areas such as electoral campaigns and social media communication. However, comparatively less attention has been paid to how emotional language varies across different institutional settings within parliamentary debate.
+
+This study addresses this gap by examining how emotive rhetoric differs across different types of parliamentary speech. Specifically, it asks:
+
+How does the use of emotive rhetoric vary across different stages of UK parliamentary speeches?
+
+To answer this question, the study draws on a large dataset of UK parliamentary speeches from Osnabrügge, Hobolt, and Rodon (2021) data and adopts a computational text analysis approach. Two complementary measures of emotional language are used: an existing measure of emotive rhetoric capturing the intensity of emotional expression, and a dictionary-based sentiment analysis capturing the balance between positive and negative language. By comparing these measures across parliamentary stages, the analysis aims to provide a more nuanced understanding of how emotional language is used in political discourse.
+
+2.Literature Review
+
+The study of political discourse has long been central to understanding how political actors communicate, persuade, and exercise power. Political language is not merely a neutral medium for conveying information; rather, it plays an active role in shaping how issues are framed, how arguments are constructed, and how audiences are influenced. Research in political communication has highlighted that discourse is both strategic and context-dependent, with speakers adapting their language according to institutional settings and communicative goals (van Dijk, 1997).
+
+A growing body of literature has emphasised the importance of emotion in political communication. Emotive rhetoric can be used to strengthen arguments, signal moral positions, and mobilise public support. Scholars have shown that emotional language is particularly salient in contexts where political competition is intense, such as election campaigns and media debates (Grimmer & Stewart, 2013). At the same time, emotional expression in political discourse is not limited to positive language, but also includes criticism, conflict, and adversarial engagement. Research using computational methods has further demonstrated how linguistic patterns can be used to systematically analyse emotional tone in large-scale text corpora (Pennebaker et al., 2015).
+
+Despite this growing interest, much of the existing research has focused on highly visible and public-facing arenas, such as election campaigns or online platforms. Comparatively less attention has been paid to how emotional language varies within institutional settings such as parliamentary debate. Parliamentary proceedings are structured into distinct stages, each characterised by different interactional norms and communicative purposes. For instance, Prime Minister's Questions are widely recognised as adversarial and performative, whereas other forms of debate may be more policy-oriented and informational. These differences suggest that the use of emotive rhetoric may vary systematically across parliamentary stages.
+
+This study builds on the existing literature by examining how emotional language differs across institutional contexts within parliamentary discourse. By focusing on variation across parliamentary stages and combining measures of emotive intensity and sentiment, the analysis contributes to a more nuanced understanding of how emotion operates in political communication.
+
+3.Method section
+
+This study investigates how the use of emotive rhetoric varies across different stages of UK parliamentary speeches. The analysis draws on a large speech-level dataset of UK parliamentary debate contributions, containing 958,925 observations. Each observation represents an individual speech and includes both textual content and a range of metadata, such as date, speaker characteristics, party affiliation, and parliamentary context. The dataset also contains pre-constructed measures related to emotive rhetoric, including emotive_rhetoric, which is used as the main outcome variable in the first stage of the analysis.
+
+A computational text analysis approach was adopted in order to compare linguistic patterns systematically across different parliamentary settings. The analysis proceeded in three main steps: data preparation, construction of a parliamentary stage variable, and text-based sentiment analysis.
+
+First, the data were imported into R after loading the required packages. Initial inspection of the dataset showed that parliamentary stage was not provided as a single categorical variable. Instead, the dataset contained a series of binary indicators identifying different parliamentary contexts, including Prime Minister's Questions, Queen's Speech debates, Ministerial Questions, Urgent Questions, and Other Debates. To make these categories analytically comparable, a new categorical variable called stage was constructed using these binary indicators. Speeches were then assigned to one of the following categories: Ministerial Questions, Other Debate, PM Questions, Queen's Speech (Day 1), Queen's Speech (Other Days), and Urgent Questions. Observations that could not be assigned to one of these categories were removed from the stage-based comparison.
+
+```{r,results='hide',message=FALSE,warning=FALSE}
+# Load required packages for data manipulation, text processing, and visualisation
+library(ggplot2)     # for data visualisation
+library(plyr)        # for data manipulation
+library(gdata)       # for additional data handling functions
+library(stringr)     # for string processing
+library(data.table)  # for efficient data import and handling
+library(kableExtra)  # for table formatting
+library(tidyverse)   # for data manipulation and analysis
+```
+
+
+```{r}
+# import the the UK parliamentary speech dataset from the local folder
+data <- fread("D:/CTA/uk_data.csv", encoding = "UTF-8")
+```
+
+```{r,results='hide'} 
+# Inspect the structure of the dataset
+glimpse(data)
+
+# Display all variable names
+colnames(data)
+```
+
+```{r}
+# Create a new categorical variable called 'stage' based on binary indicators of parliamentary context
+data <- data %>%
+  mutate(
+    stage = case_when(
+      pm_questions == 1 ~ "PM Questions",
+      queen_debate_day1 == 1 ~ "Queen's Speech (Day 1)",
+      queen_debate_others == 1 ~ "Queen's Speech (Other Days)",
+      m_questions == 1 ~ "Ministerial Questions",
+      u_questions == 1 ~ "Urgent Questions",
+      other_debate == 1 ~ "Other Debate",
+      TRUE ~ NA_character_
+    )
+  )
+
+# Check the distribution of observations across parliamentary stages
+table(data$stage, useNA = "ifany")
+
+# Remove observations with missing stage values
+data <- data %>%
+  filter(!is.na(stage))
+
+# Check the final distribution of the stage variable after filtering
+table(data$stage)
+
+```
+
+Given the very large size of the full dataset, a sampling strategy was used for the main analysis. Rather than drawing a simple random sample, a stratified sampling approach was employed in order to ensure balanced comparisons across parliamentary stages. Specifically, 500 speeches were sampled from each stage category, resulting in a final analytical sample of 3,000 speeches. This approach was used to avoid over-representation of larger categories such as Other Debate and under-representation of smaller debate types, thereby making cross-stage comparison more interpretable. A random seed was set to improve reproducibility.
+
+```{r}
+# Set a random seed to ensure reproducibility
+set.seed(123)
+
+# Perform stratified sampling: draw 500 observations from each stage
+data_samp <- data %>%
+  group_by(stage) %>%
+  sample_n(500)
+
+# Check the distribution of the sampled data
+table(data_samp$stage)
+```
+
+The first part of the analysis used the existing emotive_rhetoric variable to compare the distribution of emotive rhetoric across parliamentary stages. This variable provides a quantitative indication of the relative balance of emotive and neutral language within each speech. Boxplots were used to visualise the distribution of emotive rhetoric scores across the six parliamentary stages. This allowed for comparison not only of central tendencies, such as median values, but also of dispersion and outliers across contexts.
+
+```{r}
+# Inspect the distribution of the emotive_rhetoric variable
+summary(data_samp$emotive_rhetoric)
+
+# Check for missing values in the emotive_rhetoric variable
+sum(is.na(data_samp$emotive_rhetoric))
+
+# Create a boxplot to compare emotive rhetoric across parliamentary stages
+ggplot(data_samp, aes(x = stage, y = emotive_rhetoric)) +
+  geom_boxplot() +
+  labs(
+    title = "Emotive rhetoric across parliamentary stages",
+    x = "Parliamentary stage",
+    y = "Emotive rhetoric score"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+To complement this existing measure and to incorporate a computational text analysis technique directly applied to the speech texts, a second analysis was conducted using dictionary-based sentiment analysis. The textual variable text was tokenised into individual words using the tidytext package. These tokens were then matched with the Bing sentiment lexicon, which classifies words as either positive or negative. For each parliamentary stage, the number of positive and negative words was calculated and used to generate a standardised sentiment score: the difference between positive and negative words divided by their total count. This standardisation was used to make sentiment more comparable across stages, since raw positive and negative counts can be influenced by text length and total token volume.
+
+```{r}
+# Load tidytext package for text processing
+library(tidytext)
+
+# Convert text into individual word tokens
+tokens <- data_samp %>%
+  unnest_tokens(word, text)
+
+# View the first few rows of tokenised data
+head(tokens)
+
+# Match tokens with Bing sentiment lexicon (positive/negative classification)
+tokens_sentiment <- tokens %>%
+  inner_join(get_sentiments("bing"), by = "word")
+```
+
+```{r}
+# Count positive and negative words for each parliamentary stage
+sentiment_counts <- tokens_sentiment %>%
+  dplyr::group_by(stage, sentiment) %>%
+  dplyr::summarise(n = dplyr::n(), .groups = "drop")
+
+# Convert data to wide format: separate positive and negative counts
+sentiment_wide <- sentiment_counts %>%
+  tidyr::pivot_wider(
+    names_from = sentiment,
+    values_from = n,
+    values_fill = 0
+  )
+
+# Calculate total sentiment words and standardised sentiment score
+sentiment_summary <- sentiment_wide %>%
+  dplyr::mutate(
+    total = positive + negative,
+    sentiment_score = (positive - negative) / total
+  )
+```
+
+```{r}
+# View the final sentiment summary dataset
+sentiment_summary
+
+# Create the bar plot to compare standardised sentiment scores across parliamentary stages
+ggplot(sentiment_summary, aes(x = stage, y = sentiment_score)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Sentiment score across stages",
+    x = "Parliamentary stage",
+    y = "Standardised sentiment score"
+  ) +
+  theme_minimal()
+```
+
+The combination of these two measures serves an important analytical purpose. The emotive_rhetoric variable captures the broader intensity of emotional language, while the sentiment analysis provides a more specific indication of whether the language used is relatively positive or negative in tone. Comparing these two measures makes it possible to distinguish between speeches that are highly emotive and speeches that are positively framed. This is especially useful in political discourse, where emotionally charged language is not necessarily supportive or optimistic, but may instead be critical, adversarial, or confrontational.
+
+4.Findings
+
+4.1 Emotive rhetoric across parliamentary stages
+
+Figure 1 presents the distribution of emotive rhetoric across different parliamentary stages using a stratified sample. The results reveal clear and systematic differences between stages.
+
+```{r,echo=FALSE}
+# Create the boxplot again to compare emotive rhetoric across parliamentary stages
+ggplot(data_samp, aes(x = stage, y = emotive_rhetoric)) +
+  geom_boxplot() + 
+  labs(
+    title = "Emotive rhetoric across parliamentary stages",
+    x = "Parliamentary stage",
+    y = "Emotive rhetoric score"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Prime Minister's Questions exhibit the highest levels of emotive rhetoric, with a noticeably higher median compared to other stages. This supports the interpretation of PMQs as a highly adversarial and performative setting, in which speakers engage in direct confrontation and rhetorical positioning.
+
+Similarly, speeches delivered during Queen's Speech debates also show relatively elevated levels of emotive rhetoric. However, the distribution in this category appears more concentrated, suggesting a more structured and possibly scripted form of emotional expression.
+
+In contrast, Ministerial Questions and Other Debates display more neutral distributions, with median values closer to zero. This indicates a more informational and policy-oriented style of communication, where speakers are less reliant on emotionally charged language.
+
+Urgent Questions show greater variability in emotive rhetoric, with a wider spread of values and more extreme observations. This pattern suggests that these debates may be more reactive and context-dependent, potentially reflecting heightened political tension or issue salience.
+
+4.2 Sentiment across parliamentary stages
+
+Figure 2 presents sentiment scores derived from a dictionary-based sentiment analysis of the speech texts. The sentiment score captures the balance between positive and negative language, allowing for a more nuanced understanding of the emotional tone of parliamentary speech.
+
+```{r,echo=FALSE}
+# Create the bar plot again to compare standardised sentiment scores across parliamentary stages
+ggplot(sentiment_summary, aes(x = stage, y = sentiment_score)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Sentiment score across stages",
+    x = "Parliamentary stage",
+    y = "Standardised sentiment score"
+  ) +
+  theme_minimal()
+```
+
+The results indicate that Ministerial Questions exhibit the highest sentiment scores, suggesting a relatively more positive or neutral tone. This aligns with their more technical and policy-focused nature, where language may be less confrontational.
+
+Urgent Questions also display relatively high sentiment scores, although the variability observed in Figure 1 suggests that this category includes both strongly positive and strongly negative expressions. This highlights the dynamic and reactive nature of these debates.
+
+In contrast, Prime Minister's Questions show only moderate sentiment scores, despite their high levels of emotive rhetoric. This suggests that the emotional language used in PMQs is not necessarily positive, but may instead reflect criticism, opposition, or adversarial engagement.
+
+Queen's Speech debates exhibit comparatively lower sentiment scores, indicating a more balanced or restrained tone. This may reflect the formal and agenda-setting nature of these speeches, where rhetorical expression is more controlled.
+
+4.3 Comparing emotive rhetoric and sentiment
+
+Taken together, the results from Figures 1 and 2 highlight an important distinction between the intensity and the tone of emotional language.
+
+While some parliamentary stages, such as Prime Minister's Questions, exhibit high levels of emotive rhetoric, they do not necessarily correspond to high sentiment scores. This suggests that emotionally intense language is not inherently positive, but may instead be used in critical or confrontational ways.
+
+Conversely, stages such as Ministerial Questions show relatively high sentiment scores while maintaining lower levels of emotive rhetoric. This indicates that more neutral or policy-focused discussions can still contain positively framed language without relying heavily on emotional intensity.
+
+Overall, these findings demonstrate that emotional expression in parliamentary speech is multidimensional. Both the intensity and the direction of emotional language vary across institutional contexts, reflecting differences in the communicative purposes, interactional dynamics and strategic positioning within each parliamentary stage.
+
+5.Limitations and Extensions
+
+5.1 Limitations
+
+While the analysis provides useful insights into how emotive rhetoric and sentiment vary across parliamentary stages, several limitations should be acknowledged.
+
+First, the sentiment analysis relies on a dictionary-based approach, specifically the Bing sentiment lexicon. Although this method offers a transparent and easily interpretable way of classifying language as positive or negative, it does not take into account contextual meaning. In particular, it cannot capture sarcasm, irony, or negation, which are common features of political speech. As a result, certain expressions may be misclassified, especially in adversarial contexts such as Prime Minister's Questions.
+
+Second, both measures of emotional language used in this study have inherent limitations. The emotive_rhetoric variable provides a useful proxy for the intensity of emotional language, but it is based on predefined criteria and may not fully capture the nuances of rhetorical strategies. Similarly, the sentiment score simplifies emotional expression into a binary distinction between positive and negative words, which may overlook more complex emotional tones such as uncertainty, anger, or enthusiasm.
+
+Third, the use of stratified sampling, while beneficial for ensuring balanced comparisons across parliamentary stages, means that the sample does not reflect the original distribution of speech types in the full dataset. As a result, the findings should be interpreted as indicative of differences between stages rather than as representative of the overall frequency of these patterns in parliamentary discourse.
+
+Fourth, the analysis focuses on word-level features and does not take into account the broader structure of speech, such as sentence-level meaning, rhetorical devices, or discourse context. This limits the ability to fully capture how emotional language is constructed and deployed in political communication.
+
+Finally, the analysis is descriptive and does not establish causal relationships. While differences across parliamentary stages are observed, it is not possible to determine whether these differences are driven by institutional factors, speaker characteristics, or external political events.
+
+Despite these limitations, the analysis provides a useful foundation for further research. Several extensions could be explored to deepen the analysis.
+
+5.2 Extensions
+
+First, more advanced text analysis techniques could be applied, such as topic modelling or supervised classification, to better understand the substantive content associated with different types of emotional language. This would allow for a more detailed examination of how specific political issues relate to rhetorical strategies.
+
+Second, future research could incorporate contextual or speaker-level variables, such as party affiliation, government versus opposition status, or gender, to examine how emotional language varies across different types of political actors.
+
+Third, the analysis could be extended temporally to explore how emotive rhetoric evolves over time, particularly in response to major political events such as elections or crises.
+
+Finally, qualitative analysis of selected speeches could complement the computational approach, providing a more nuanced understanding of how emotional language is used in practice. Combining quantitative and qualitative methods would allow for a more comprehensive interpretation of political discourse.
+
+6.Conclusion
+
+This study examined how the use of emotive rhetoric varies across different stages of UK parliamentary speeches. By combining an existing measure of emotive rhetoric with dictionary-based sentiment analysis, the findings demonstrate that emotional language differs systematically across parliamentary contexts.
+
+The results show that stages such as Prime Minister's Questions are characterised by higher levels of emotive rhetoric, reflecting their adversarial and performative nature. In contrast, more policy-oriented settings, such as Ministerial Questions, exhibit lower levels of emotional intensity but relatively more positive or neutral language. Importantly, the comparison between the two analytical approaches highlights that higher levels of emotive rhetoric do not necessarily correspond to more positive sentiment, underscoring the complexity of emotional expression in political discourse.
+
+These findings contribute to the broader literature on political communication by illustrating how institutional context shapes not only the intensity but also the tone of language used by political actors. More broadly, the study demonstrates the value of computational text analysis for uncovering patterns in large-scale political data.
+
+Future research could extend this approach by incorporating more context-sensitive methods or by examining how these patterns evolve over time or across different political actors.
+
+7.References
+
+van Dijk, T. A. (Ed.). (1997).Discourse as social interaction: Discourse studies: A multidisciplinary introduction, Vol. 2.Sage Publications, Inc.
+Grimmer, J., & Stewart, B. M. (2013). Text as Data: The Promise and Pitfalls of Automatic Content Analysis Methods for Political Texts.Political Analysis,21(3), 267–297. doi:10.1093/pan/mps028
+Pennebaker, J. W., Boyd, R. L., Jordan, K., & Blackburn, K. (2015). The development and psychometric properties of LIWC2015. University of Texas at Austin. doi:10.15781/T29G6Z
+https://www.researchgate.net/publication/282124505_The_Development_and_Psychometric_Properties_of_LIWC2015
+
+The R code used in this analysis is available at:
+https://github.com/Sicheon/CTA-final-assessment.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
